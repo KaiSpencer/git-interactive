@@ -1,16 +1,30 @@
 import { Toolbox } from '../types'
 
+const GIT = 'git -c color.ui=always'
+
 module.exports = (toolbox: Toolbox) => {
-  const GIT = 'git -c color.ui=always'
   toolbox.chooseGitCommand = async () => {
+    const readline = require('readline')
+    readline.emitKeypressEvents(process.stdin)
+    process.stdin.setRawMode(true)
+    process.stdin.resume()
+    process.stdin.on('keypress', (str, key) => {
+      console.log('keypress', str)
+
+      if (str === '\u0003') {
+        console.log('esc')
+      }
+    })
+
     const { prompt } = require('enquirer')
     const choices = [
+      'a  <- add',
+      'A  <- add -A',
+      'b  <- branch -a',
       `c  <- commit -m`,
       'C  <- checkout',
       `p  <- pull`,
       's  <- status',
-      'A  <- add -A',
-      'b  <- branch -a',
       'q  <<< exit'
     ]
 
@@ -31,22 +45,64 @@ module.exports = (toolbox: Toolbox) => {
     ])
 
     switch (confirm) {
+      /**
+       * Stage changes
+       *
+       * Prompt for pathspec
+       *
+       * TODO: tab completion on directories
+       */
+      case 'a': {
+        console.clear()
+        await gitCommand({
+          toolbox,
+          command: 'status',
+          displayChooseGitCommandPostCommand: false
+        })
+        const { pathspec } = await toolbox.prompt.ask([
+          {
+            type: 'input',
+            name: 'pathspec',
+            message: 'Enter pathspec'
+          }
+        ])
+        gitCommand({
+          toolbox,
+          command: 'add',
+          extraArgs: pathspec,
+          displayChooseGitCommandPostCommand: false
+        })
+        console.clear()
+        await gitCommand({ toolbox, command: 'status' })
+        toolbox.chooseGitCommand()
+        break
+      }
+      /**
+       * Commit staged changes
+       * Prompt for commit message
+       */
       case `c`: {
         console.clear()
         const { commitMessage } = await toolbox.prompt.ask([
           {
             type: 'input',
             name: 'commitMessage',
-            message: ' Enter commit message'
+            message: 'Enter commit message'
           }
         ])
-        console.log(commitMessage)
-
-        toolbox.print.info(
-          await toolbox.system.run(`git commit -m "${commitMessage}"`)
-        )
+        gitCommand({
+          toolbox,
+          command: 'commit',
+          extraArgs: `-m "${commitMessage}"`
+        })
         break
       }
+      /**
+       * List local branches
+       * Search list prompt to select branch to checkout
+       *
+       * Error if branch already checked out
+       */
       case `C`: {
         console.clear()
         const inquirer = require('inquirer')
@@ -72,40 +128,53 @@ module.exports = (toolbox: Toolbox) => {
           .then(async function(answer: { branch: string }) {
             const { branch } = answer
             console.clear()
-            toolbox.print.info(
-              await toolbox.system.run(`${GIT} checkout ${branch}`)
-            )
-            toolbox.chooseGitCommand()
+            await gitCommand({ toolbox, command: 'status', extraArgs: branch })
           })
           .catch(e => console.log(e))
         break
       }
+      /**
+       * `git pull`
+       */
       case `p`: {
         console.clear()
-        toolbox.print.info(await toolbox.system.run(`${GIT} pull`))
-        toolbox.chooseGitCommand()
+        await gitCommand({ toolbox, command: 'pull' })
         break
       }
+      /**
+       * Print `git status`
+       */
       case `s`: {
         console.clear()
-        toolbox.print.newline
-        toolbox.print.info(await toolbox.system.run(`${GIT} status`))
-        toolbox.chooseGitCommand()
+        await gitCommand({ toolbox, command: 'status' })
         break
       }
+      /**
+       * List local branches
+       */
       case 'b': {
         console.clear()
-        toolbox.print.info(await toolbox.system.run(`git branch`))
-        toolbox.chooseGitCommand()
+        await gitCommand({ toolbox, command: 'branch' })
         break
       }
+      /**
+       * Add all changes
+       * Print `git status`
+       */
       case `A`: {
         console.clear()
-        toolbox.system.run(`${GIT} add -A`)
-        toolbox.print.info(await toolbox.system.run(`${GIT} status`))
-        toolbox.chooseGitCommand()
+        await gitCommand({
+          toolbox,
+          command: 'add',
+          extraArgs: '-A',
+          displayChooseGitCommandPostCommand: false
+        })
+        await gitCommand({ toolbox, command: 'status' })
         break
       }
+      /**
+       * Exit program
+       */
       case `q`: {
         process.exit()
       }
@@ -114,6 +183,25 @@ module.exports = (toolbox: Toolbox) => {
         console.log('UNKNOWN')
       }
     }
+  }
+}
+
+type GitCommand = 'add' | 'checkout' | 'pull' | 'branch' | 'status' | 'commit'
+interface GitCommandParam {
+  toolbox: Toolbox
+  command: GitCommand
+  extraArgs?: string
+  displayChooseGitCommandPostCommand?: boolean
+}
+const gitCommand = async ({
+  toolbox,
+  command,
+  extraArgs = '',
+  displayChooseGitCommandPostCommand = true
+}: GitCommandParam) => {
+  toolbox.print.info(await toolbox.system.run(`${GIT} ${command} ${extraArgs}`))
+  if (displayChooseGitCommandPostCommand) {
+    toolbox.chooseGitCommand()
   }
 }
 
