@@ -4,18 +4,6 @@ const GIT = 'git -c color.ui=always'
 
 module.exports = (toolbox: Toolbox) => {
   toolbox.chooseGitCommand = async () => {
-    const readline = require('readline')
-    readline.emitKeypressEvents(process.stdin)
-    process.stdin.setRawMode(true)
-    process.stdin.resume()
-    process.stdin.on('keypress', (str, key) => {
-      console.log('keypress', str)
-
-      if (str === '\u0003') {
-        console.log('esc')
-      }
-    })
-
     const { prompt } = require('enquirer')
     const choices = [
       'a  <- add',
