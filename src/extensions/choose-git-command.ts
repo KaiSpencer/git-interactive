@@ -5,11 +5,12 @@ module.exports = (toolbox: Toolbox) => {
   toolbox.chooseGitCommand = async () => {
     const { prompt } = require('enquirer')
     const choices = [
-      `c  <- commit`,
+      `c  <- commit -m`,
       'C  <- checkout',
       `p  <- pull`,
       's  <- status',
-      'a  <- add -A',
+      'A  <- add -A',
+      'b  <- branch -a',
       'q  <<< exit'
     ]
 
@@ -31,7 +32,19 @@ module.exports = (toolbox: Toolbox) => {
 
     switch (confirm) {
       case `c`: {
-        console.log('git commit')
+        console.clear()
+        const { commitMessage } = await toolbox.prompt.ask([
+          {
+            type: 'input',
+            name: 'commitMessage',
+            message: ' Enter commit message'
+          }
+        ])
+        console.log(commitMessage)
+
+        toolbox.print.info(
+          await toolbox.system.run(`git commit -m "${commitMessage}"`)
+        )
         break
       }
       case `C`: {
@@ -45,29 +58,26 @@ module.exports = (toolbox: Toolbox) => {
           .prompt([
             {
               type: 'search-list',
-              message: 'Select topping',
-              name: 'topping',
-              choices: [
-                'Pepperoni',
-                'Ham',
-                'Ground Meat',
-                'Bacon',
-                'Mozzarella',
-                'Bottle'
-              ],
+              message: 'Select branch',
+              name: 'branch',
+              choices: await gitBranches(toolbox),
               validate: function(answer) {
-                if (answer === 'Bottle') {
-                  return `Whoops, ${answer} is not a real topping.`
+                if (answer[0] == '*') {
+                  return `${answer} is already checked out!`
                 }
                 return true
               }
             }
           ])
-          .then(function(answers) {
-            console.log(JSON.stringify(answers, null, '  '))
+          .then(async function(answer: { branch: string }) {
+            const { branch } = answer
+            console.clear()
+            toolbox.print.info(
+              await toolbox.system.run(`${GIT} checkout ${branch}`)
+            )
+            toolbox.chooseGitCommand()
           })
           .catch(e => console.log(e))
-
         break
       }
       case `p`: {
@@ -78,11 +88,18 @@ module.exports = (toolbox: Toolbox) => {
       }
       case `s`: {
         console.clear()
+        toolbox.print.newline
         toolbox.print.info(await toolbox.system.run(`${GIT} status`))
         toolbox.chooseGitCommand()
         break
       }
-      case `a`: {
+      case 'b': {
+        console.clear()
+        toolbox.print.info(await toolbox.system.run(`git branch`))
+        toolbox.chooseGitCommand()
+        break
+      }
+      case `A`: {
         console.clear()
         toolbox.system.run(`${GIT} add -A`)
         toolbox.print.info(await toolbox.system.run(`${GIT} status`))
@@ -98,4 +115,17 @@ module.exports = (toolbox: Toolbox) => {
       }
     }
   }
+}
+
+const gitBranches = async (toolbox: Toolbox): Promise<string[]> => {
+  const branches = (await toolbox.system.run(`git branch`))
+    .split('\n')
+    .map(branch => branch.trim())
+
+  branches.forEach((item, index) => {
+    if (item === '') {
+      branches.splice(index, 1)
+    }
+  })
+  return branches
 }
